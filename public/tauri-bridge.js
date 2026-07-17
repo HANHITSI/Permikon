@@ -1,7 +1,4 @@
-// Tauri API Bridge - replaces online registry calls with local Tauri commands
-
 const tauriAPI = {
-    // Check if we're running in Tauri
     isTauri: () => typeof window.__TAURI__ !== 'undefined',
 
     // Invoke a Tauri command with improved error extraction

@@ -12,7 +12,6 @@ pub fn parse_bmson(filepath: &Path) -> Result<(Vec<(f64, u8)>, ChartMetadata)> {
     let init_bpm = info.get("init_bpm").and_then(|v| v.as_f64()).unwrap_or(150.0);
     let resolution = info.get("resolution").and_then(|v| v.as_u64()).unwrap_or(240) as f64;
 
-    // Extract metadata
     let metadata = ChartMetadata {
         title: info.get("title").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
         subtitle: info.get("sub_title").and_then(|v| v.as_str()).unwrap_or("").to_string(),

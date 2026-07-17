@@ -4,8 +4,6 @@ use std::path::Path;
 use regex_lite::Regex;
 use crate::{ChartMetadata, PanchiraError, Result};
 
-// ---------- domain types ----------
-
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 enum EventKind { Bpm, Stop, Note }
 
@@ -57,8 +55,6 @@ struct TimingState {
     ts_idx: usize,
 }
 
-// ---------- channel classification ----------
-
 enum ChannelGroup {
     TimeSig,
     BpmDirect,
@@ -86,8 +82,6 @@ fn classify_channel(chan: u32) -> ChannelGroup {
         }
     }
 }
-
-// ---------- metadata extraction ----------
 
 fn extract_metadata(lines: &[&str]) -> ChartMetadata {
     let mut meta = ChartMetadata {
@@ -133,8 +127,7 @@ fn extract_metadata(lines: &[&str]) -> ChartMetadata {
             }
         }
         if let Some(re) = &genre_re {
-            if let Some(_caps) = re.captures(line) {
-                // genre can be used as fallback for mode/difficulty
+            if re.captures(line).is_some() {
                 continue;
             }
         }
@@ -185,8 +178,6 @@ fn extract_metadata(lines: &[&str]) -> ChartMetadata {
     meta
 }
 
-// ---------- public entry point ----------
-
 pub fn parse_bms(filepath: &Path) -> Result<(Vec<(f64, u8)>, ChartMetadata)> {
     let bytes = fs::read(filepath)?;
 
@@ -202,7 +193,6 @@ pub fn parse_bms(filepath: &Path) -> Result<(Vec<(f64, u8)>, ChartMetadata)> {
     };
     let lines: Vec<&str> = content.lines().collect();
 
-    // Extract metadata first
     let metadata = extract_metadata(&lines);
 
     let mut bpm_table: HashMap<u32, f64> = HashMap::new();
@@ -214,7 +204,6 @@ pub fn parse_bms(filepath: &Path) -> Result<(Vec<(f64, u8)>, ChartMetadata)> {
     let stop_idx_re = Regex::new(r"^#STOP\s+(\d+)\s+(\d+)$").map_err(|e| PanchiraError::Parse(e.to_string()))?;
     let data_line_re = Regex::new(r"^#(\d+)([0-9A-Z]{2}):(.+)$").map_err(|e| PanchiraError::Parse(e.to_string()))?;
 
-    // ---- first pass: collect all definitions ----
     for line in &lines {
         let line = line.trim();
         if line.is_empty() || line.starts_with('*') { continue; }
@@ -247,7 +236,6 @@ pub fn parse_bms(filepath: &Path) -> Result<(Vec<(f64, u8)>, ChartMetadata)> {
         }
     }
 
-    // ---- second pass: collect raw events with all definitions known ----
     let mut raw_events: Vec<RawEvent> = Vec::new();
 
     fn for_each_slot(data: &str, mut cb: impl FnMut(usize, &str)) {
@@ -293,7 +281,6 @@ pub fn parse_bms(filepath: &Path) -> Result<(Vec<(f64, u8)>, ChartMetadata)> {
                 ChannelGroup::BpmIndexed => {
                     for_each_slot(data, |slot, hex| {
                         if let Ok(idx) = u32::from_str_radix(hex, 16) {
-                            // Table is fully populated from first pass, always valid.
                             raw_events.push(RawEvent {
                                 meas, slot: slot as u32, resolution,
                                 kind: EventKind::Bpm,
@@ -335,7 +322,6 @@ pub fn parse_bms(filepath: &Path) -> Result<(Vec<(f64, u8)>, ChartMetadata)> {
 
     if bpm_table.is_empty() { bpm_table.insert(0, 150.0); }
 
-    // ---- time-signature boundary table ----
     let mut boundaries: Vec<TsBoundary> = Vec::new();
     {
         let mut sorted_ts: Vec<(u32, f64)> = ts_map.iter().map(|(&m, &v)| (m, v)).collect();

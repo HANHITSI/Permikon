@@ -219,10 +219,6 @@ fn process_single_chart(md5: &str, out_db: &Path, table_name: &str) -> Result<()
     )?;
     panchira_cli::db::create_table_in_conn(&conn, table_name)?;
 
-    // Insert with metadata
-    for row in &analysis.permutations {
-        // Use the existing insert_rows which takes a slice
-    }
     panchira_cli::db::insert_rows(&conn, table_name, md5, &analysis.permutations)?;
     Ok(())
 }

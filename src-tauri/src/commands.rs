@@ -11,8 +11,6 @@ use tauri_plugin_dialog::DialogExt;
 use md5::{Digest, Md5};
 use chrono::Utc;
 
-
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AnalysisResult {
     pub md5: String,
@@ -45,8 +43,6 @@ pub struct SearchResult {
     pub entries: Vec<HistoryEntry>,
     pub total: usize,
 }
-
-
 
 fn chart_analysis_to_result(analysis: ChartAnalysis, md5: String, path: String) -> Result<AnalysisResult> {
     let ChartAnalysis { metadata, permutations } = analysis;
@@ -127,7 +123,6 @@ pub async fn analyze_chart(_app: AppHandle, path: String) -> Result<AnalysisResu
         return Err(PermikonError::NotFound(path.display().to_string()));
     }
 
-    // Validate file format
     match path.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()) {
         Some(ref ext) if ["bms", "bme", "bmson", "bml"].contains(&ext.as_str()) => {}
         _ => {
@@ -388,8 +383,6 @@ pub async fn drag_drop_analyze(app: AppHandle, paths: Vec<String>) -> Result<Vec
     Ok(results)
 }
 
-// ---- Song Database commands ----
-
 /// Configuration for a loaded song database, stored in settings.json.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SongDbConfig {
@@ -404,7 +397,6 @@ pub struct SongDbConfig {
 pub async fn load_song_database(_app: AppHandle, db_path: String) -> Result<SongDbConfig> {
     let path = std::path::PathBuf::from(&db_path);
 
-    // Validate and discover schema
     let mappings = songdb::validate_database(&path)?;
     let entry_count = songdb::count_entries(&path, &mappings);
 
@@ -419,7 +411,6 @@ pub async fn load_song_database(_app: AppHandle, db_path: String) -> Result<Song
         entry_count,
     };
 
-    // Persist to settings
     let settings_path = get_settings_path()?;
     let mut settings: serde_json::Value = if settings_path.exists() {
         let content = std::fs::read_to_string(&settings_path)?;

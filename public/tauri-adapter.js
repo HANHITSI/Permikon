@@ -1,6 +1,3 @@
-// Tauri Adapter - Overrides online registry functions with local Tauri commands
-// This file should be loaded AFTER script.js
-
 (function() {
     'use strict';
 
@@ -12,7 +9,6 @@
 
         var app = window.app;
 
-        // -------- loadRegistry --------
         app.loadRegistry = async function() {
             try {
                 var result = await window.tauriAPI.getRecentAnalyses(50);
@@ -41,7 +37,6 @@
             }
         };
 
-        // -------- loadChart --------
         app.loadChart = async function(md5) {
             if (this.loading) return;
             this.loading = true;
@@ -52,7 +47,7 @@
                 var result = await window.tauriAPI.loadChart(md5);
                 if (result) {
                     this.currentAnalysis = result.json;
-                    this.allPerms = result.json;
+                    this.renderFromAnalysis(result.json);
                     this.title = result.title;
                     this.prevRankMap = {};
                     this.searchPerm = null;
@@ -60,7 +55,6 @@
                     this.dom.permSearch.value = '';
                     this.dom.result.innerHTML = '';
                     this.updateChartHeader(result.md5);
-                    this.updateRank();
                     this.save();
                     this.showToast('Loaded: ' + this.title);
                 }
@@ -73,7 +67,6 @@
             }
         };
 
-        // -------- selectChart --------
         app.selectChart = function(md5, entry) {
             // Ensure the entry is in the registry so updateChartHeader can find it.
             // This matters for song database entries that haven't been analyzed yet.
@@ -101,9 +94,8 @@
             }
         };
 
-        // -------- loadFromSongDb --------
         // Analyzes a chart from an external song database, saves it to history,
-        // then loads it. The registry is refreshed before loading so the chart
+        // then loads it. Registry is refreshed before loading so the chart
         // header shows metadata immediately.
         app.loadFromSongDb = async function(entry) {
             this.showToast('Analyzing: ' + entry.title, 3000);
@@ -120,8 +112,6 @@
             }
         };
 
-        // -------- filterAndShow --------
-        // Always uses the unified backend search so song databases are included.
         app.filterAndShow = async function() {
             var q = this.dom.chartSearch.value.trim();
             if (!q) {
@@ -131,7 +121,6 @@
             await this.searchUnified(q);
         };
 
-        // -------- searchUnified: single search across history + song databases --------
         app.searchUnified = async function(query) {
             try {
                 var result = await window.tauriAPI.search(query);
@@ -206,10 +195,8 @@
             }
         }, 2000);
 
-        // -------- renderSearchResults --------
-        // Overrides script.js to fix click handling for song database entries.
-        // The original looks up this.registry[md5], which misses entries from
-        // external databases that haven't been analyzed yet.
+        // Overrides script.js: the original looks up this.registry[md5],
+        // which misses entries from external databases not yet analyzed.
         app.renderSearchResults = function(results) {
             var shown = (results || []).slice(0, 96);
             this.searchResultsData = shown;
@@ -259,7 +246,8 @@
             }
         };
 
-        // -------- renderFromAnalysis --------
+        // Expands backend array format (anchors: [...], trills: [...])
+        // to named properties (a1..a7, trill_12..trill_67) that _updateRank reads.
         app.renderFromAnalysis = function(analysisJson) {
             if (!analysisJson || !Array.isArray(analysisJson)) {
                 console.error('Invalid analysis JSON');
@@ -293,7 +281,6 @@
             this.updateRank();
         };
 
-        // -------- handleDrop --------
         app.handleDrop = async function(files) {
             var chartFiles = Array.from(files).filter(function(f) {
                 return ['.bms', '.bme', '.bmson', '.bml'].some(function(ext) {
@@ -349,7 +336,6 @@
             }
         };
 
-        // -------- Load Chart button --------
         var loadChartBtn = document.getElementById('loadChartBtn');
         if (loadChartBtn) {
             loadChartBtn.addEventListener('click', async function() {
@@ -365,7 +351,6 @@
             });
         }
 
-        // -------- Load DB button --------
         var loadDbBtn = document.getElementById('loadDbBtn');
         if (loadDbBtn) {
             loadDbBtn.addEventListener('click', async function() {

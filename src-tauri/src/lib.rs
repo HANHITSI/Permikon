@@ -3,8 +3,6 @@ mod error;
 mod songdb;
 mod storage;
 
-
-
 use tauri::{Manager, WindowEvent, DragDropEvent, Emitter};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
