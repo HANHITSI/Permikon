@@ -1,0 +1,19 @@
+# Rust build artifacts
+target/
+
+# Tauri generated code
+src-tauri/gen/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env

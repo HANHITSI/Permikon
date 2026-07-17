@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Permikon • Permutation Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="logo.png" type="image/png">
+</head>
+<body>
+    <div id="permTooltip" class="perm-tooltip"></div>
+
+    <div class="app-header">
+            <div class="logo">
+                <img src="permikon_header.png" alt="Permikon" class="logo-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                <span class="logo-text" style="display:none;">Permikon</span>
+            </div>
+            <div class="subtitle">
+                powered by
+                <span class="panchira-text" title="density-wave aware rust implementation of&#10;github.com/HANHITSI/pantsu">panchira</span>
+            </div>
+            <div id="permCounter" class="perm-counter">0 permutations and counting...</div>
+        </div>
+
+    <div class="app-container">
+        <div id="chartHeader" class="chart-header">
+            <span id="chartTitle">Awaiting your first chart...</span>
+        </div>
+
+        <div class="search-container">
+            <div class="search-input-row">
+                <input type="text" id="chartSearch" placeholder="Search history..." autocomplete="off">
+                <button class="btn-load-chart" id="loadChartBtn">Load chart</button>
+                <button class="btn-load-chart" id="loadDbBtn">Load DB</button>
+            </div>
+            <div id="searchResults" class="search-grid hidden-state"></div>
+        </div>
+
+                <div class="tip-text" style="margin-bottom: .8rem;">tip: backspace activates the search, esc closes it, you can use arrow keys to navigate</div>
+
+        <div class="controls" id="presetControls">
+            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+                <span style="font-weight:bold;">Preset:</span>
+                <button class="preset-btn" id="p1Btn">P1</button>
+                <button class="preset-btn active" id="p2Btn">P2</button>
+                <button class="preset-btn" id="customBtn">CUSTOM</button>
+            </div>
+        </div>
+
+        <div class="tip-text">
+            tip: the more you encode your preferences to the anchors, trill pairs and weights, the better the rankings will be.
+        </div>
+
+        <details class="controls" id="pairControls">
+            <summary>&#9452; Anchors &amp; Trill pairs</summary>
+            <div class="anchor-section">
+                <div class="anchor-row">
+                    <span class="label anchor-label">A-</span>
+                    <div id="anchorContainer" class="anchor-buttons"></div>
+                </div>
+            </div>
+            <div class="pair-factors">
+                <div class="pair-grid">
+                    <div id="pairContainer" class="pair-container"></div>
+                </div>
+                <div class="factor-group">
+                    <div class="ratio-control">
+                        <label for="anchorRatio">Anchor Reward / Penalty Ratio</label>
+                        <input type="range" id="anchorRatio" class="ratio-slider" min="0" max="1" step="0.05" value="0.25">
+                    </div>
+                    <div class="ratio-control">
+                        <label for="trillRatio">Trill Reward / Penalty Ratio</label>
+                        <input type="range" id="trillRatio" class="ratio-slider" min="0" max="1" step="0.05" value="0.25">
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <details class="controls" id="sliderControls">
+            <summary>&#9881; Weights</summary>
+            <div class="slider-row">
+                <label>Smooth</label>
+                <div class="slider-group">
+                    <div class="slider-caption">how predictably the notes flow</div>
+                    <div class="slider-wrapper" id="smoothWrapper">
+                        <input type="range" id="smoothWeight" min="0" max="2" step="0.01" value="1">
+                        <span class="bypass-label">Bypassed.</span>
+                    </div>
+                </div>
+                <input type="number" id="smoothText" step="any" value="1">
+            </div>
+            <div class="slider-row">
+                <label>Tight</label>
+                <div class="slider-group">
+                    <div class="slider-caption">how tight the chords are, reduces gaps</div>
+                    <div class="slider-wrapper" id="tightWrapper">
+                        <input type="range" id="tightWeight" min="0" max="2" step="0.01" value="1">
+                        <span class="bypass-label">Bypassed.</span>
+                    </div>
+                </div>
+                <input type="number" id="tightText" step="any" value="1">
+            </div>
+            <div class="slider-row">
+                <label>Base</label>
+                <div class="slider-group">
+                    <div class="slider-caption">how consistent the layout is</div>
+                    <div class="slider-wrapper" id="baseWrapper">
+                        <input type="range" id="baseWeight" min="0" max="2" step="0.01" value="1">
+                        <span class="bypass-label">Bypassed.</span>
+                    </div>
+                </div>
+                <input type="number" id="baseText" step="any" value="1">
+            </div>
+            <div class="slider-row">
+                <label>Spike</label>
+                <div class="slider-group">
+                    <div class="slider-caption">how much sudden deviations are avoided</div>
+                    <div class="slider-wrapper" id="spikeWrapper">
+                        <input type="range" id="spikeWeight" min="0" max="2" step="0.01" value="1">
+                        <span class="bypass-label">Bypassed.</span>
+                    </div>
+                </div>
+                <input type="number" id="spikeText" step="any" value="1">
+            </div>
+            <div class="slider-row">
+                <label>Anchors</label>
+                <div class="slider-group">
+                    <div class="slider-caption">how much your anchor preferences align with the layout</div>
+                    <div class="slider-wrapper" id="anchorWrapper">
+                        <input type="range" id="anchorWeight" min="0" max="2" step="0.01" value="1">
+                        <span class="bypass-label">Bypassed.</span>
+                    </div>
+                </div>
+                <input type="number" id="anchorText" step="any" value="1">
+            </div>
+            <div class="slider-row">
+                <label>Trill</label>
+                <div class="slider-group">
+                    <div class="slider-caption">how much your trill pair preferences align with the layout</div>
+                    <div class="slider-wrapper" id="trillWrapper">
+                        <input type="range" id="trillWeight" min="0" max="2" step="0.01" value="1">
+                        <span class="bypass-label">Bypassed.</span>
+                    </div>
+                </div>
+                <input type="number" id="trillText" step="any" value="1">
+            </div>
+        </details>
+
+        <div id="stats" class="stat-box" style="display:none;"><span id="bestInfo"></span></div>
+
+        <div class="search-area">
+            <input type="text" id="permSearch" placeholder="Search perm (e.g. 3162457)" maxlength="7">
+            <button class="btn" id="permSearchBtn">Go</button>
+            <button class="btn" id="clearSearchBtn" style="display:none;">Clear</button>
+            <div style="flex:1; text-align:right;"><label>Show: <select id="topNSelector"><option value="12">12</option><option value="24" selected>24</option><option value="48">48</option><option value="120">120</option><option value="240">240</option><option value="5040">5040</option></select></label></div>
+        </div>
+
+        <div class="tip-text" style="margin-bottom: .5rem;">tip: double-clicking a perm copies it</div>
+
+                <div id="resultArea"><p class="loading">Load a chart to see results.</p></div>
+        <div id="toastContainer"></div>
+    </div>
+
+    <script src="tauri-bridge.js"></script>
+    <script src="tauri-adapter.js"></script>
+    <script>
+    // Block DevTools shortcuts in production builds only.
+    // Tauri dev serves from http://localhost; production from tauri://localhost.
+    if (window.location.protocol !== 'http:') {
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'F12') {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            }
+            if (e.ctrlKey && e.shiftKey && ['I', 'J', 'C'].indexOf(e.key) !== -1) {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            }
+            if (e.ctrlKey && e.key === 'u') {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            }
+        }, true);
+        document.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+        }, true);
+    }
+    </script>
+    <script src="script.js"></script>
+    <script>
+    // Listen for native file-dropped events from the Tauri backend.
+    // With dragDropEnabled=true in tauri.conf.json, Tauri intercepts
+    // file drops at the native level. Rust emits this event with paths.
+    if (window.__TAURI__) {
+        var listen = window.__TAURI__.event.listen;
+        listen('file-dropped', function (event) {
+            var paths = event.payload;
+            if (window.app && window.app.handleDrop) {
+                var fakeFiles = paths.map(function(p) {
+                    return {
+                        name: p.split('/').pop() || p.split('\\').pop() || p,
+                        path: p,
+                        size: 0,
+                        type: ''
+                    };
+                });
+                window.app.handleDrop(fakeFiles);
+            }
+        });
+    }
+    </script>
+</body>
+</html>

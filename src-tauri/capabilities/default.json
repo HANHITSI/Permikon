@@ -1,0 +1,16 @@
+{
+  "identifier": "app.permikon.default",
+  "description": "Default capabilities for Permikon",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "dialog:allow-open",
+    "fs:default",
+    "opener:default",
+    "shell:default",
+    "shell:allow-open",
+    "clipboard-manager:default",
+    "clipboard-manager:allow-write-text"
+  ]
+}
