@@ -36,17 +36,17 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
-      - name: Build deb
-        working-directory: src-tauri
-        run: cargo tauri build --target deb
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli
 
-      - name: Build RPM
-        working-directory: src-tauri
-        run: cargo tauri build --target rpm
+      - name: Install linuxdeploy
+        run: |
+          wget -q -O /usr/local/bin/linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x /usr/local/bin/linuxdeploy
 
-      - name: Build AppImage
+      - name: Build deb, rpm, and AppImage
         working-directory: src-tauri
-        run: cargo tauri build --target appimage
+        run: cargo tauri build --bundles deb,rpm,appimage
 
       - name: Upload deb
         uses: actions/upload-artifact@v4
@@ -78,9 +78,12 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli
+
       - name: Build dmg
         working-directory: src-tauri
-        run: cargo tauri build --target dmg
+        run: cargo tauri build --bundles dmg
 
       - name: Upload dmg
         uses: actions/upload-artifact@v4
@@ -100,9 +103,12 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli
+
       - name: Build NSIS
         working-directory: src-tauri
-        run: cargo tauri build --target nsis
+        run: cargo tauri build --bundles nsis
 
       - name: Upload NSIS
         uses: actions/upload-artifact@v4
