@@ -2,7 +2,7 @@
 
 Offline desktop workstation for analyzing BMS/BME/BMSON chart permutations.
 
-Permikon wraps the Permidex UI and panchira analysis engine in a native desktop app via Tauri 2.
+Permikon wraps the [Permidex](https://permidex.app) UI and panchira analysis engine in a native desktop app via Tauri 2.
 
 ## Features
 
