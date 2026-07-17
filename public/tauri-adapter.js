@@ -265,16 +265,30 @@
                 console.error('Invalid analysis JSON');
                 return;
             }
+
+            var lanePairs = [];
+            for (var a = 1; a <= 7; a++) {
+                for (var b = a + 1; b <= 7; b++) {
+                    lanePairs.push([a, b]);
+                }
+            }
+
             this.allPerms = analysisJson.map(function(row) {
-                return {
+                var expanded = {
                     perm: row.perm,
                     smooth: row.smooth,
                     tight: row.tight,
                     base: row.base,
-                    spike: row.spike,
-                    anchors: row.anchors,
-                    trills: row.trills
+                    spike: row.spike
                 };
+                for (var i = 0; i < 7; i++) {
+                    expanded['a' + (i + 1)] = row.anchors ? row.anchors[i] : 0;
+                }
+                for (var i = 0; i < lanePairs.length; i++) {
+                    var pair = lanePairs[i];
+                    expanded['trill_' + pair[0] + pair[1]] = row.trills ? row.trills[i] : 0;
+                }
+                return expanded;
             });
             this.updateRank();
         };
