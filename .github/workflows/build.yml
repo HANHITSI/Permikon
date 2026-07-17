@@ -106,15 +106,17 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli
 
-      - name: Build NSIS
+      - name: Build NSIS and portable
         working-directory: src-tauri
-        run: cargo tauri build --bundles nsis
+        run: cargo tauri build --bundles nsis,dir
 
       - name: Upload Windows
         uses: actions/upload-artifact@v4
         with:
           name: permikon-windows
-          path: src-tauri/target/release/bundle/nsis/*.exe
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/dir/*.exe
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
