@@ -1,4 +1,4 @@
-# Permikon
+# ![Permikon](permikon_header.png)
 
 Offline desktop workstation for analyzing BMS/BME/BMSON chart permutations.
 
