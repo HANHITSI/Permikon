@@ -32,9 +32,16 @@
 
         <div class="search-container">
             <div class="search-input-row">
-                <input type="text" id="chartSearch" placeholder="Search history..." autocomplete="off">
+                <div class="search-input-wrapper">
+                    <button class="btn-paste-go" id="pasteGoBtn" title="Paste MD5 from clipboard"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></button>
+                    <input type="text" id="chartSearch" placeholder="Search charts..." autocomplete="off">
+                </div>
                 <button class="btn-load-chart" id="loadChartBtn">Load chart</button>
                 <button class="btn-load-chart" id="loadDbBtn">Load DB</button>
+                <button class="btn-load-chart" id="configureTablesBtn">Tables</button>
+            </div>
+            <div style="margin-bottom:0.4rem;">
+                <label style="font-size:0.8rem; color:#6272A4; display:flex; align-items:center; gap:0.3rem; cursor:pointer; width:fit-content;"><input type="checkbox" id="searchOnlyTables"> Search only tables</label>
             </div>
             <div id="searchResults" class="search-grid hidden-state"></div>
         </div>
@@ -155,13 +162,39 @@
             <input type="text" id="permSearch" placeholder="Search perm (e.g. 3162457)" maxlength="7">
             <button class="btn" id="permSearchBtn">Go</button>
             <button class="btn" id="clearSearchBtn" style="display:none;">Clear</button>
+            <label style="font-size:0.8rem; color:#6272A4;">Pattern:</label><select id="permPatternFilter"><option value="">None</option><option value="BBBWWWW">BBBWWWW</option><option value="WWWWBBB">WWWWBBB</option><option value="WWBBBWW">WWBBBWW</option><option value="WBWBWBW">WBWBWBW</option></select>
             <div style="flex:1; text-align:right;"><label>Show: <select id="topNSelector"><option value="12">12</option><option value="24" selected>24</option><option value="48">48</option><option value="120">120</option><option value="240">240</option><option value="5040">5040</option></select></label></div>
         </div>
 
         <div class="tip-text" style="margin-bottom: .5rem;">tip: double-clicking a perm copies it</div>
 
                 <div id="resultArea"><p class="loading">Load a chart to see results.</p></div>
-        <div id="toastContainer"></div>
+    <div id="tablesModal" class="modal-overlay" style="display:none;">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">Difficulty Tables</span>
+                <button class="modal-close" id="tablesModalClose">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="tablesList" class="tables-list"></div>
+                <div class="tables-add">
+                    <div class="tables-add-header">Add Table</div>
+                    <div class="tables-form">
+                        <input type="text" id="tblName" placeholder="Name (optional)">
+                        <input type="text" id="tblPrefix" placeholder="Prefix">
+                        <input type="text" id="tblUrl" placeholder="URL">
+                        <input type="text" id="tblStrip" placeholder="Strip Prefix (optional)">
+                        <button class="btn" id="tblAddBtn">Add</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-load-chart" id="rebuildRegistryBtn">Rebuild Registry</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toastContainer"></div>
     </div>
 
     <script src="tauri-bridge.js"></script>

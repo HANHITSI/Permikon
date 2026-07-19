@@ -13,6 +13,7 @@ const app = {
     sortCol: 'total_score',
     sortAsc: false,
     searchPerm: null,
+    permFilter: null,
     preset: 'P2',
     lastExponents: { smooth: 1, tight: 1, base: 1, spike: 1, anchor: 1, trill: 1 },
     inflightPrefetch: new Set(),
@@ -21,6 +22,36 @@ const app = {
     prefetchTimer: null,
     updateTimeout: null,
     dom: {},
+    tableEntries: [],      // full array from backend
+    tableMap: {},            // md5 → [{title, artist, levels}]
+    searchOnlyTables: true,
+    searchPool: [],          // merged search pool (one entry per MD5)
+
+    buildTableMap() {
+        this.tableMap = {};
+        for (const e of this.tableEntries) {
+            this.tableMap[e.md5] = e;
+        }
+    },
+
+    getSearchPool() {
+        if (this.searchOnlyTables) {
+            return this.tableEntries || [];
+        }
+        const seen = new Set();
+        const pool = [];
+        for (const t of this.tableEntries) {
+            seen.add(t.md5);
+            pool.push(t);
+        }
+        for (const e of this.registryList) {
+            if (!seen.has(e.md5)) {
+                seen.add(e.md5);
+                pool.push(e);
+            }
+        }
+        return pool;
+    },
 
     LANE_PAIRS: [],
     PAIR_KEYS: [],
@@ -41,7 +72,191 @@ const app = {
         t.className = 'toast';
         t.innerHTML = msg;
         this.dom.toastContainer.appendChild(t);
-        setTimeout(() => t.remove(), duration);
+        setTimeout(() => {
+            t.classList.add('exiting');
+            setTimeout(() => t.remove(), 250);
+        }, duration);
+    },
+
+    // ─── Difficulty Tables Modal ─────────────────────────────────
+    async openTablesModal() {
+        try {
+            this._tablesConfigs = await window.tauriAPI.getCustomTables();
+        } catch(e) {
+            this._tablesConfigs = [];
+        }
+        this.renderTablesModal();
+        document.getElementById('tablesModal').style.display = 'flex';
+    },
+
+    closeTablesModal() {
+        document.getElementById('tablesModal').style.display = 'none';
+    },
+
+    renderTablesModal() {
+        const list = document.getElementById('tablesList');
+        const configs = this._tablesConfigs || [];
+        if (!configs.length) {
+            list.innerHTML = '<div style="color:#6272A4;text-align:center;padding:1rem;">No tables configured.</div>';
+            return;
+        }
+        let html = '';
+        configs.forEach((c, i) => {
+            const cls = c.enabled ? '' : ' disabled';
+            html += '<div class="table-row' + cls + '" data-idx="' + i + '" id="tableRow' + i + '">';
+            html += '<input type="checkbox" class="tbl-toggle" data-idx="' + i + '"' + (c.enabled ? ' checked' : '') + '>';
+            html += '<span class="tbl-prefix">' + (c.prefix || '—') + '</span>';
+            html += '<span class="tbl-url" title="' + (c.name || c.url) + '">' + (c.name || c.url) + '</span>';
+            html += '<button class="tbl-edit" data-idx="' + i + '">Edit</button>';
+            html += '<button class="tbl-delete" data-idx="' + i + '">Delete</button>';
+            html += '</div>';
+        });
+        list.innerHTML = html;
+
+        list.querySelectorAll('.tbl-toggle').forEach(btn => {
+            btn.addEventListener('change', (e) => {
+                const idx = parseInt(e.target.dataset.idx);
+                this._tablesConfigs[idx].enabled = e.target.checked;
+                this.saveTableConfigs();
+                this.renderTablesModal();
+            });
+        });
+        list.querySelectorAll('.tbl-edit').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = parseInt(e.target.dataset.idx);
+                this.editTableConfig(idx);
+            });
+        });
+        list.querySelectorAll('.tbl-delete').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = parseInt(e.target.dataset.idx);
+                this._tablesConfigs.splice(idx, 1);
+                this.saveTableConfigs();
+                this.renderTablesModal();
+            });
+        });
+    },
+
+    editTableConfig(idx) {
+        const c = this._tablesConfigs[idx];
+        const row = document.getElementById('tableRow' + idx);
+        if (!row) return;
+        row.classList.add('editing');
+        row.innerHTML =
+            '<div class="table-edit-form">' +
+            '<input type="text" class="edit-name" placeholder="Name" value="' + (c.name || '').replace(/"/g, '&quot;') + '">' +
+            '<input type="text" class="edit-prefix" placeholder="Prefix" value="' + (c.prefix || '').replace(/"/g, '&quot;') + '">' +
+            '<input type="text" class="edit-url" placeholder="URL" value="' + (c.url || '').replace(/"/g, '&quot;') + '">' +
+            '<input type="text" class="edit-strip" placeholder="Strip Prefix" value="' + (c.strip_prefix || '').replace(/"/g, '&quot;') + '">' +
+            '<div class="tbl-edit-actions">' +
+            '<button class="tbl-save">Save</button>' +
+            '<button class="tbl-cancel">Cancel</button>' +
+            '</div>' +
+            '</div>';
+
+        row.querySelector('.edit-url').focus();
+        row.querySelector('.edit-url').select();
+
+        const save = () => {
+            const name = row.querySelector('.edit-name').value.trim();
+            const prefix = row.querySelector('.edit-prefix').value.trim();
+            const url = row.querySelector('.edit-url').value.trim();
+            const strip_prefix = row.querySelector('.edit-strip').value.trim();
+            if (!url) { this.showToast('URL is required'); return; }
+            if (!prefix) { this.showToast('Prefix is required'); return; }
+            this._tablesConfigs[idx] = { name: name, prefix: prefix, url: url, enabled: c.enabled, strip_prefix: strip_prefix };
+            this.saveTableConfigs();
+            this.renderTablesModal();
+        };
+
+        row.querySelector('.tbl-save').addEventListener('click', save);
+        row.querySelector('.tbl-cancel').addEventListener('click', () => this.renderTablesModal());
+        row.querySelector('.edit-url').addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+        row.querySelector('.edit-prefix').addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+    },
+
+    async saveTableConfigs() {
+        try {
+            await window.tauriAPI.saveCustomTables(this._tablesConfigs);
+        } catch(e) {
+            this.showToast('Failed to save: ' + e.message, 5000);
+        }
+    },
+
+    async rebuildRegistry() {
+        const btn = document.getElementById('rebuildRegistryBtn');
+        btn.disabled = true;
+        btn.textContent = 'Downloading...';
+        let unlisten = null;
+        try {
+            if (window.__TAURI__ && window.__TAURI__.event) {
+                unlisten = await window.__TAURI__.event.listen('registry-progress', (e) => {
+                    this.showToast(e.payload, 4000);
+                });
+            }
+            const loaded = await window.tauriAPI.rebuildRegistry();
+            this.tableEntries = await window.tauriAPI.getTableEntries();
+            this.buildTableMap();
+            await this.loadRegistry();
+            if (this.currentMd5) this.updateChartHeader(this.currentMd5);
+            this.filterAndShow(this.dom.chartSearch.value);
+            this.showToast('Registry rebuilt: ' + loaded.join(', '));
+            this.closeTablesModal();
+        } catch(e) {
+            this.showToast('Rebuild failed: ' + e.message, 5000);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Rebuild Registry';
+            if (unlisten) unlisten();
+        }
+    },
+
+    async addTableConfig() {
+        const name = (document.getElementById('tblName').value || '').trim();
+        const prefix = (document.getElementById('tblPrefix').value || '').trim();
+        const url = (document.getElementById('tblUrl').value || '').trim();
+        const strip_prefix = (document.getElementById('tblStrip').value || '').trim();
+        if (!url) { this.showToast('URL is required'); return; }
+        if (!prefix) { this.showToast('Prefix is required'); return; }
+        this._tablesConfigs.push({ name, prefix, url, enabled: true, strip_prefix });
+        await this.saveTableConfigs();
+        this.renderTablesModal();
+        document.getElementById('tblName').value = '';
+        document.getElementById('tblPrefix').value = '';
+        document.getElementById('tblUrl').value = '';
+        document.getElementById('tblStrip').value = '';
+    },
+
+    // ─── Paste & Go ──────────────────────────────────────────────
+    async pasteAndGo() {
+        try {
+            const text = await window.tauriAPI.readClipboard();
+            const md5match = (text || '').trim().match(/^[a-fA-F0-9]{32}$/);
+            if (!md5match) {
+                this.showToast('Clipboard does not contain a valid MD5 hash');
+                return;
+            }
+            const md5 = md5match[0].toLowerCase();
+            const entry = this.registry[md5];
+            if (entry) {
+                this.selectChart(md5, entry);
+            } else {
+                this.showToast('No chart found for MD5: ' + md5);
+            }
+        } catch(e) {
+            this.showToast('Failed to read clipboard');
+        }
+    },
+
+    colorPermHtml(perm) {
+        return perm.split('').map(digit => {
+            const cls = "246".includes(digit) ? "perm-digit-blue" : "perm-digit-white";
+            return `<span class="${cls}">${digit}</span>`;
+        }).join('');
+    },
+
+    permToBW(perm) {
+        return perm.split('').map(d => "246".includes(d) ? 'B' : 'W').join('');
     },
 
     setPairs(mode) {
@@ -219,9 +434,11 @@ const app = {
     updateChartHeader(md5) {
         const entry = this.registry[md5];
         if (!entry) { this.dom.chartTitle.textContent = 'Awaiting your first query…'; return; }
-        const subtitle = entry.subtitle || (entry.levels?.length ? `(${entry.levels.join(', ')})` : '');
-        const artist = entry.artist ? ` – ${entry.artist}` : '';
-        this.dom.chartTitle.textContent = `${entry.title} ${subtitle}${artist}`;
+        const artist = entry.artist ? ' – ' + entry.artist : '';
+        const levels = entry.levels || [];
+        const subtitle = entry.subtitle || '';
+        const levelStr = levels.length ? ' [' + levels.join(', ') + ']' : '';
+        this.dom.chartTitle.textContent = (entry.title + ' ' + subtitle + levelStr + artist).trim();
     },
 
     async loadChartData(md5) {
@@ -321,40 +538,34 @@ const app = {
 
         if (shown.length === 0) {
             this.dom.searchResults.innerHTML = '<div class="search-empty">No matches</div>';
-        } else {
-            let html = '';
-            shown.forEach((entry, idx) => {
-                const levels = entry.levels?.length ? `(${entry.levels.join(', ')})` : '';
-                html += `<div class="search-card" data-index="${idx}" data-md5="${entry.md5}">
-                <div class="search-card-title">${entry.title}</div>
-                <div class="search-card-levels">${levels}</div>
-                <div class="search-card-artist">${entry.artist || ''}</div>
-                </div>`;
-            });
-            this.dom.searchResults.innerHTML = html;
-        }
-
-        this.dom.searchResults.classList.remove('hidden-state');
-        if (shown.length <= 24) {
+            this.dom.searchResults.classList.remove('hidden-state');
             this.dom.searchResults.style.maxHeight = 'none';
-            const naturalHeight = this.dom.searchResults.scrollHeight;
-            this.dom.searchResults.style.maxHeight = naturalHeight + 'px';
-        } else {
-            this.dom.searchResults.style.maxHeight = '18.6rem';
+            return;
         }
 
-        if (shown.length > 0) {
-            this.dom.searchResults.querySelectorAll('.search-card').forEach(card => {
-                card.addEventListener('click', () => {
-                    const md5 = card.dataset.md5;
-                    const entry = this.registry[md5];
-                    if (entry) this.selectChart(md5, entry);
-                });
-                    card.addEventListener('mouseenter', () => {
-                        this.highlightCard(parseInt(card.dataset.index));
-                    });
-            });
+        let html = '';
+        for (const entry of shown) {
+            const levels = this.tableMap[entry.md5]?.levels || entry.levels || [];
+            const levelStr = levels.length ? levels.join(', ') : '';
+
+            html += `<div class="search-card" data-md5="${entry.md5}">
+                <div class="search-card-title">${entry.title}</div>
+                <div class="search-card-levels">${levelStr}</div>
+                <div class="search-card-artist">${entry.artist || ''}</div>
+            </div>`;
         }
+
+        this.dom.searchResults.innerHTML = html;
+        this.dom.searchResults.classList.remove('hidden-state');
+        this.dom.searchResults.style.maxHeight = 'none';
+
+        this.dom.searchResults.querySelectorAll('.search-card').forEach(card => {
+            card.addEventListener('click', () => {
+                const md5 = card.dataset.md5;
+                const entry = this.registry[md5] || this.tableMap[md5];
+                if (entry) this.selectChart(md5, entry);
+            });
+        });
     },
 
     hideSearchResults() {
@@ -371,28 +582,25 @@ const app = {
     },
 
     filterAndShow(query) {
-        const q = query.trim();
+        const q = (query || '').trim();
+        const pool = this.getSearchPool();
         if (!q) {
-            this.renderSearchResults(this.registryList.slice(0, 96));
+            this.renderSearchResults(pool.slice(0, 96));
             return;
         }
         const tokens = q.toLowerCase().split(/\s+/);
-        const results = this.registryList.filter(entry => {
-            const title = entry.title.toLowerCase();
+        const results = pool.filter(entry => {
+            const title = (entry.title || '').toLowerCase();
             const artist = (entry.artist || '').toLowerCase();
-            const levels = (entry.levels || []).map(l => l.toLowerCase());
+            const levels = this.tableMap[entry.md5]?.levels || entry.levels || [];
+            const levelStr = levels.join(' ').toLowerCase();
             return tokens.every(token =>
-            title.includes(token) || artist.includes(token) || levels.some(l => l.includes(token))
+                title.includes(token) ||
+                artist.includes(token) ||
+                levelStr.includes(token)
             );
         }).slice(0, 96);
         this.renderSearchResults(results);
-        clearTimeout(this.prefetchTimer);
-        if (results.length > 0) {
-            const visible = this.searchResultsData.slice(0, 24);
-            if (visible.length > 0) {
-                this.prefetchTimer = setTimeout(() => this.startStaggeredPrefetch(visible), 300);
-            }
-        }
     },
 
     updateRank() {
@@ -538,6 +746,8 @@ const app = {
                 this.searchPerm = null;
                 this.dom.clearBtn.style.display = 'none';
             }
+        } else if (this.permFilter) {
+            shown = display.filter(p => this.permToBW(p.perm) === this.permFilter);
         } else {
             shown = top > 0 ? display.slice(0, top) : display;
         }
@@ -598,7 +808,7 @@ const app = {
             };
 
             html += `<tr ${cls}>
-            <td>${rank}</td><td><span class="perm-cell">${p.perm_display}</span></td>
+            <td>${rank}</td><td><span class="perm-cell">${this.colorPermHtml(p.perm_display)}</span></td>
             <td style="color:${colorForPct(p.total_score)}">${p.total_score.toFixed(1)}%</td>
             <td style="color:${colorForPct(p.smooth_pct)}">${p.smooth_pct.toFixed(1)}%</td>
             <td style="color:${colorForPct(p.tight_pct)}">${p.tight_pct.toFixed(1)}%</td>
@@ -609,7 +819,9 @@ const app = {
             <td>${deltaHtml}</td></tr>`;
         }
         html += `</tbody></table></div>`;
-        if (!this.searchPerm && shown.length < total)
+        if (!this.searchPerm && this.permFilter && shown.length < total)
+            html += `<p style="color:#6272A4;font-size:0.75rem;margin-top:0.5rem;">Showing ${shown.length} of ${total} perms matching pattern ${this.permFilter}.</p>`;
+        else if (!this.searchPerm && shown.length < total)
             html += `<p style="color:#6272A4;font-size:0.75rem;margin-top:0.5rem;">Showing top ${shown.length} of ${total} perms.</p>`;
         else if (this.searchPerm)
             html += `<p style="color:#6272A4;font-size:0.75rem;margin-top:0.5rem;">Showing perm ${this.searchPerm} with context.</p>`;
@@ -669,8 +881,9 @@ const app = {
                 this.dom.permTooltip.style.display = 'none';
             });
             cell.addEventListener('dblclick', () => {
-                navigator.clipboard.writeText(cell.textContent).then(() => {
-                    this.showToast(`✔ Copied! <span style="font-family:'JetBrains Mono',monospace;">${cell.textContent}</span>`, 3000);
+                const perm = cell.textContent;
+                navigator.clipboard.writeText(perm).then(() => {
+                    this.showToast(`✔ Copied! <span style="font-family:'JetBrains Mono',monospace;">${this.colorPermHtml(perm)}</span>`, 3000);
                 }).catch(() => {});
             });
         });
@@ -717,7 +930,9 @@ const app = {
             sortColumn: this.sortCol,
             sortAscending: this.sortAsc,
             md5: this.currentMd5,
-            scrollTop: this.dom.result.querySelector('.table-wrap')?.scrollTop || 0
+            scrollTop: this.dom.result.querySelector('.table-wrap')?.scrollTop || 0,
+            permFilter: this.permFilter,
+            searchOnlyTables: this.searchOnlyTables
         };
         localStorage.setItem('permidex_settings', JSON.stringify(state));
     },
@@ -744,6 +959,14 @@ const app = {
         if (s.topN) this.dom.topN.value = s.topN;
         if (s.sortColumn) this.sortCol = s.sortColumn;
         if (s.sortAscending !== undefined) this.sortAsc = s.sortAscending;
+        if (s.permFilter !== undefined) {
+            this.permFilter = s.permFilter || null;
+            this.dom.permPatternFilter.value = s.permFilter || '';
+        }
+        if (s.searchOnlyTables !== undefined) {
+            this.searchOnlyTables = s.searchOnlyTables;
+            this.dom.searchOnlyTables.checked = s.searchOnlyTables;
+        }
         if (s.pairStates) { this.pairStates = s.pairStates; this.detectPreset(); }
         else { this.setPairs(this.preset); this.setPreset(this.preset); }
         if (s.anchorStates) { this.anchorStates = s.anchorStates; }
@@ -779,17 +1002,20 @@ const app = {
         const counter = this.dom.permCounter;
         counter.classList.remove('final');
         const total = totalCharts * 5040;
-        const duration = 2000;
+        const duration = 1500;
+        // Read current value to animate from it
+        const match = counter.textContent.match(/([\d,]+)/);
+        const fromTotal = match ? parseInt(match[1].replace(/,/g, ''), 10) : 0;
         const start = performance.now();
         const easeOutExpo = t => t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
-        let lastCharts = -1;
+        let lastTotal = -1;
         const frame = now => {
             const elapsed = Math.min(now - start, duration);
             const t = elapsed / duration;
-            const chartCount = Math.floor(easeOutExpo(t) * totalCharts);
-            if (chartCount !== lastCharts) {
-                lastCharts = chartCount;
-                counter.textContent = `${(chartCount * 5040).toLocaleString()} permutations and counting...`;
+            const current = Math.round(fromTotal + (total - fromTotal) * easeOutExpo(t));
+            if (current !== lastTotal) {
+                lastTotal = current;
+                counter.textContent = `${current.toLocaleString()} permutations and counting...`;
             }
             if (elapsed < duration) requestAnimationFrame(frame);
             else {
@@ -816,6 +1042,9 @@ const app = {
         this.initConstants();
 
         const dom = this.dom;
+        dom.chartSearch = document.getElementById('chartSearch');
+        dom.searchResults = document.getElementById('searchResults');
+        dom.searchOnlyTables = document.getElementById('searchOnlyTables');
         dom.sliders = {
             smooth: document.getElementById('smoothWeight'),
             tight: document.getElementById('tightWeight'),
@@ -855,6 +1084,7 @@ const app = {
         dom.permSearch = document.getElementById('permSearch');
         dom.searchBtn = document.getElementById('permSearchBtn');
         dom.clearBtn = document.getElementById('clearSearchBtn');
+        dom.permPatternFilter = document.getElementById('permPatternFilter');
         dom.chartSearch = document.getElementById('chartSearch');
         dom.searchResults = document.getElementById('searchResults');
         dom.chartTitle = document.getElementById('chartTitle');
@@ -867,13 +1097,40 @@ const app = {
         dom.aText = dom.texts.anchor;
         dom.trText = dom.texts.trill;
 
+        // Difficulty tables
+        dom.configureTablesBtn = document.getElementById('configureTablesBtn');
+        dom.searchOnlyTables = document.getElementById('searchOnlyTables');
+
+        dom.configureTablesBtn.addEventListener('click', () => this.openTablesModal());
+
+        // Modal listeners
+        document.getElementById('tablesModalClose').addEventListener('click', () => this.closeTablesModal());
+        document.getElementById('tablesModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) this.closeTablesModal(); });
+        document.getElementById('tblAddBtn').addEventListener('click', () => this.addTableConfig());
+        document.getElementById('rebuildRegistryBtn').addEventListener('click', () => this.rebuildRegistry());
+
+        // Paste & Go
+        document.getElementById('pasteGoBtn').addEventListener('click', () => this.pasteAndGo());
+
+        dom.searchOnlyTables.addEventListener('change', () => {
+            this.searchOnlyTables = dom.searchOnlyTables.checked;
+            this.filterAndShow(this.dom.chartSearch.value);
+            this.updateRank();
+            this.save();
+        });
+
+        try {
+            this.tableEntries = await window.tauriAPI.getTableEntries();
+            this.buildTableMap();
+        } catch (e) {
+            console.error('[INIT] failed to load tableEntries:', e);
+        }
+
         await this.loadRegistry();
-        this.animateCounter(this.registryList.length);
+        this.animateCounter(this.registryList.filter(e => e.analyzed).length);
 
         dom.chartSearch.addEventListener('focus', () => {
-            const q = dom.chartSearch.value.trim();
-            if (!q) this.renderSearchResults(this.registryList.slice(0, 96));
-            else this.filterAndShow(q);
+            this.filterAndShow(dom.chartSearch.value);
         });
             dom.chartSearch.addEventListener('input', () => {
                 this.filterAndShow(dom.chartSearch.value);
@@ -918,9 +1175,7 @@ const app = {
                     e.preventDefault();
                     dom.chartSearch.focus();
                     dom.chartSearch.select();
-                    const q = dom.chartSearch.value.trim();
-                    if (!q) this.renderSearchResults(this.registryList.slice(0, 96));
-                    else this.filterAndShow(q);
+                    this.filterAndShow(dom.chartSearch.value);
                 }
             });
             document.addEventListener('click', e => {
@@ -960,6 +1215,16 @@ const app = {
                 dom.permSearch.addEventListener('keydown', e => { if (e.key === 'Enter') this.searchPermAction(); });
                 dom.searchBtn.addEventListener('click', () => this.searchPermAction());
                 dom.clearBtn.addEventListener('click', () => this.clearPermSearch());
+
+                dom.permPatternFilter.addEventListener('change', () => {
+                    const val = dom.permPatternFilter.value;
+                    this.permFilter = val || null;
+                    this.searchPerm = null;
+                    dom.clearBtn.style.display = 'none';
+                    dom.permSearch.value = '';
+                    this.updateRank();
+                    this.save();
+                });
 
                 window.addEventListener('pagehide', () => {
                     if (this.currentMd5) {

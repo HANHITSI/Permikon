@@ -31,6 +31,9 @@ pub enum PermikonError {
 
     #[error("Invalid file format '{0}'. Supported formats: .bms, .bme, .bmson, .bml")]
     InvalidFormat(String),
+
+    #[error("Network error: {0}")]
+    Reqwest(#[from] reqwest::Error),
 }
 
 pub type Result<T> = std::result::Result<T, PermikonError>;

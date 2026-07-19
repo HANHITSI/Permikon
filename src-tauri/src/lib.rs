@@ -2,6 +2,7 @@ mod commands;
 mod error;
 mod songdb;
 mod storage;
+mod tables;
 
 use tauri::{Manager, WindowEvent, DragDropEvent, Emitter};
 
@@ -46,7 +47,6 @@ pub fn run() {
         crate::commands::analyze_chart,
         crate::commands::search,
         crate::commands::load_chart,
-        crate::commands::toggle_favorite,
         crate::commands::delete_history,
         crate::commands::clear_history,
         crate::commands::open_file_dialog,
@@ -61,6 +61,11 @@ pub fn run() {
         crate::commands::load_song_database,
         crate::commands::remove_song_database,
         crate::commands::get_song_databases,
+        crate::commands::get_custom_tables,
+        crate::commands::save_custom_tables,
+        crate::commands::rebuild_registry,
+        crate::commands::get_table_entries,
+        crate::commands::get_search_pool,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

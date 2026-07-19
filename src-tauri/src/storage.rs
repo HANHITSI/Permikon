@@ -50,6 +50,16 @@ pub fn get_settings_path() -> Result<PathBuf> {
     Ok(get_app_data_dir()?.join("settings.json"))
 }
 
+pub fn get_tables_dir() -> Result<PathBuf> {
+    let dir = get_app_data_dir()?.join("tables");
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+pub fn get_custom_tables_path() -> Result<PathBuf> {
+    Ok(get_app_data_dir()?.join("custom_tables.json"))
+}
+
 
 #[cfg(test)]
 mod tests {

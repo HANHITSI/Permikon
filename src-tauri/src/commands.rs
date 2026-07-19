@@ -5,7 +5,7 @@ use panchira_cli::{analyze_chart as panchira_analyze_chart, ChartAnalysis};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use tauri::{command, AppHandle};
+use tauri::{command, AppHandle, Emitter};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 use md5::{Digest, Md5};
@@ -35,13 +35,25 @@ pub struct HistoryEntry {
     pub mode: String,
     pub difficulty: String,
     pub analyzed_at: i64,
-    pub favorite: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SearchResult {
     pub entries: Vec<HistoryEntry>,
     pub total: usize,
+}
+
+/// A single merged entry in the search pool.
+/// One per MD5. Built by merging registry.json, history.db, and song databases.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SearchEntry {
+    pub md5: String,
+    pub title: String,
+    pub subtitle: String,
+    pub artist: String,
+    pub path: String,
+    pub levels: Vec<String>,
+    pub analyzed: bool,
 }
 
 fn chart_analysis_to_result(analysis: ChartAnalysis, md5: String, path: String) -> Result<AnalysisResult> {
@@ -76,15 +88,15 @@ fn compute_md5(path: &Path) -> Result<String> {
 }
 
 const INSERT_CHART_SQL: &str =
-    "INSERT OR REPLACE INTO charts (md5, path, title, subtitle, artist, mode, difficulty, analyzed_at, favorite, json)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9)";
+    "INSERT OR REPLACE INTO charts (md5, path, title, subtitle, artist, mode, difficulty, analyzed_at, json)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)";
 
 const SELECT_CHART_SQL: &str =
     "SELECT md5, path, title, subtitle, artist, mode, difficulty, analyzed_at, json
      FROM charts WHERE md5 = ?1";
 
 const SELECT_HISTORY_SQL: &str =
-    "SELECT id, md5, path, title, subtitle, artist, mode, difficulty, analyzed_at, favorite
+    "SELECT id, md5, path, title, subtitle, artist, mode, difficulty, analyzed_at
      FROM charts";
 
 fn row_to_analysis_result(row: &rusqlite::Row) -> rusqlite::Result<AnalysisResult> {
@@ -112,7 +124,6 @@ fn row_to_history_entry(row: &rusqlite::Row) -> rusqlite::Result<HistoryEntry> {
         mode: row.get(6)?,
         difficulty: row.get(7)?,
         analyzed_at: row.get(8)?,
-        favorite: row.get(9)?,
     })
 }
 
@@ -212,19 +223,7 @@ pub async fn load_chart(_app: AppHandle, md5: String) -> Result<AnalysisResult> 
     }
 }
 
-#[command]
-pub async fn toggle_favorite(_app: AppHandle, md5: String) -> Result<bool> {
-    let db_path = get_history_db_path()?;
-    let conn = rusqlite::Connection::open(&db_path)?;
-    let current: bool = conn.query_row(
-        "SELECT favorite FROM charts WHERE md5 = ?1",
-        [&md5],
-        |row| row.get(0)
-    )?;
-    let new_value = !current;
-    conn.execute("UPDATE charts SET favorite = ?1 WHERE md5 = ?2", rusqlite::params![new_value, md5])?;
-    Ok(new_value)
-}
+
 
 #[command]
 pub async fn delete_history(_app: AppHandle, md5: String) -> Result<()> {
@@ -340,7 +339,6 @@ pub async fn init_database(_app: AppHandle) -> Result<()> {
             mode TEXT,
             difficulty TEXT,
             analyzed_at INTEGER,
-            favorite INTEGER DEFAULT 0,
             json TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_md5 ON charts(md5);
@@ -585,7 +583,6 @@ pub async fn search(app: AppHandle, query: String) -> Result<SearchResult> {
                         mode: String::new(),
                         difficulty: String::new(),
                         analyzed_at: 0,
-                        favorite: false,
                     });
                 }
             }
@@ -600,6 +597,246 @@ pub async fn search(app: AppHandle, query: String) -> Result<SearchResult> {
 
     let total = entries.len();
     Ok(SearchResult { entries, total })
+}
+
+// ─── Difficulty Tables ──────────────────────────────────────────────
+
+use crate::tables::{download_table, CustomTableConfig, TableEntry};
+use std::collections::HashMap;
+
+/// Get the list of configured difficulty tables.
+#[command]
+pub async fn get_custom_tables() -> Result<Vec<CustomTableConfig>> {
+    Ok(crate::tables::load_custom_tables()?)
+}
+
+/// Save the full list of configured difficulty tables.
+#[command]
+pub async fn save_custom_tables(tables: Vec<CustomTableConfig>) -> Result<()> {
+    Ok(crate::tables::save_custom_tables(&tables)?)
+}
+
+/// Rebuild registry.json from enabled configured tables.
+/// Downloads every enabled table, processes levels, merges, writes registry.json.
+#[command]
+pub async fn rebuild_registry(app: AppHandle) -> Result<Vec<String>> {
+    let configs = crate::tables::load_custom_tables()?;
+    let enabled: Vec<&CustomTableConfig> = configs.iter().filter(|c| c.enabled).collect();
+    let mut loaded = Vec::new();
+    let mut merged: HashMap<String, TableEntry> = HashMap::new();
+    let total = enabled.len();
+
+    for (i, config) in enabled.iter().enumerate() {
+        let _ = app.emit("registry-progress", format!("Downloading {} ({} of {})...", config.name, i + 1, total));
+        match download_table(config).await {
+            Ok(entries) => {
+                let count = entries.len();
+                for e in entries {
+                    merged.entry(e.md5.clone())
+                        .and_modify(|existing| {
+                            for l in &e.levels {
+                                if !existing.levels.contains(l) {
+                                    existing.levels.push(l.clone());
+                                }
+                            }
+                        })
+                        .or_insert(e);
+                }
+                loaded.push(config.name.clone());
+                let _ = app.emit("registry-progress", format!("✓ {} ({} charts)", config.name, count));
+            }
+            Err(e) => {
+                eprintln!("Failed to load table {}: {}", config.name, e);
+                let _ = app.emit("registry-progress", format!("✗ {} failed: {}", config.name, e));
+            }
+        }
+    }
+
+    let registry_path = crate::storage::get_tables_dir()?.join("registry.json");
+    let registry_vec: Vec<&TableEntry> = merged.values().collect();
+    std::fs::write(&registry_path, serde_json::to_string(&registry_vec)?)?;
+
+    Ok(loaded)
+}
+
+#[tauri::command]
+pub async fn get_table_entries() -> Result<Vec<TableEntry>> {
+    let tables_dir = crate::storage::get_tables_dir()?;
+    let registry_path = tables_dir.join("registry.json");
+
+    // If registry.json exists, read it directly
+    if let Ok(content) = std::fs::read_to_string(&registry_path) {
+        if let Ok(entries) = serde_json::from_str::<Vec<TableEntry>>(&content) {
+            return Ok(entries);
+        }
+    }
+
+    // Fallback: merge individual table files
+    let mut map: HashMap<String, TableEntry> = HashMap::new();
+
+    if let Ok(dir_entries) = std::fs::read_dir(&tables_dir) {
+        for entry in dir_entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    if stem == "registry" { continue; }
+                }
+                if let Ok(file_content) = std::fs::read_to_string(&path) {
+                    if let Ok(rows) = serde_json::from_str::<Vec<TableEntry>>(&file_content) {
+                        for e in rows {
+                            map.entry(e.md5.clone())
+                                .and_modify(|existing| {
+                                    for l in &e.levels {
+                                        if !existing.levels.contains(l) {
+                                            existing.levels.push(l.clone());
+                                        }
+                                    }
+                                })
+                                .or_insert(e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(map.into_values().collect())
+}
+
+/// Build a merged search pool: one entry per MD5.
+/// Registry.json contributes levels.
+/// History.db contributes analyzed state + fills missing metadata.
+/// Song databases provide preferred metadata.
+#[command]
+pub async fn get_search_pool(app: AppHandle) -> Result<Vec<SearchEntry>> {
+    use std::collections::HashMap;
+
+    let mut pool: HashMap<String, SearchEntry> = HashMap::new();
+
+    // 1. Registry.json → contributes levels
+    let registry_entries = get_table_entries().await.unwrap_or_default();
+    for entry in registry_entries {
+        let md5 = entry.md5.to_lowercase();
+        pool.entry(md5.clone())
+            .or_insert_with(|| SearchEntry {
+                md5: md5.clone(),
+                title: entry.title,
+                subtitle: String::new(),
+                artist: entry.artist,
+                path: String::new(),
+                levels: vec![],
+                analyzed: false,
+            })
+            .levels = entry.levels;
+    }
+
+    // 2. History.db → contributes analyzed state + fills missing metadata
+    let db_path = get_history_db_path()?;
+    if db_path.exists() {
+        if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+            let sql = "SELECT md5, path, title, subtitle, artist FROM charts";
+            if let Ok(mut stmt) = conn.prepare(sql) {
+                if let Ok(rows) = stmt.query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3).unwrap_or_default(),
+                        row.get::<_, String>(4).unwrap_or_default(),
+                    ))
+                }) {
+                    for row in rows.filter_map(|r| r.ok()) {
+                        let (md5, path, title, subtitle, artist) = row;
+                        let md5 = md5.to_lowercase();
+                        let entry = pool.entry(md5.clone()).or_insert_with(|| SearchEntry {
+                            md5: md5.clone(),
+                            title: String::new(),
+                            subtitle: String::new(),
+                            artist: String::new(),
+                            path: String::new(),
+                            levels: vec![],
+                            analyzed: false,
+                        });
+                        // History fills missing metadata
+                        if entry.title.is_empty() { entry.title = title; }
+                        if entry.subtitle.is_empty() { entry.subtitle = subtitle; }
+                        if entry.artist.is_empty() { entry.artist = artist; }
+                        if entry.path.is_empty() { entry.path = path; }
+                        entry.analyzed = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Song databases → preferred metadata source
+    let song_dbs = get_song_databases(app).await.unwrap_or_default();
+    for db_config in &song_dbs {
+        let db_path = std::path::PathBuf::from(&db_config.path);
+        if !db_path.exists() {
+            continue;
+        }
+        if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+            for mapping in &db_config.mappings {
+                let subtitle_expr = match &mapping.col_subtitle {
+                    Some(col) => format!("\"{}\"", col.replace('"', "\"\"")),
+                    None => "''".to_string(),
+                };
+                let artist_expr = match &mapping.col_artist {
+                    Some(col) => format!("\"{}\"", col.replace('"', "\"\"")),
+                    None => "''".to_string(),
+                };
+
+                let sql = format!(
+                    "SELECT \"{md5}\", \"{path}\", \"{title}\", {subtitle}, {artist}
+                     FROM \"{table}\"",
+                    md5 = mapping.col_md5.replace('"', "\"\""),
+                    path = mapping.col_path.replace('"', "\"\""),
+                    title = mapping.col_title.replace('"', "\"\""),
+                    subtitle = subtitle_expr,
+                    artist = artist_expr,
+                    table = mapping.table_name.replace('"', "\"\""),
+                );
+
+                if let Ok(mut stmt) = conn.prepare(&sql) {
+                    if let Ok(rows) = stmt.query_map([], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, String>(3).unwrap_or_default(),
+                            row.get::<_, String>(4).unwrap_or_default(),
+                        ))
+                    }) {
+                        for row in rows.filter_map(|r| r.ok()) {
+                            let (md5, path, title, subtitle, artist) = row;
+                            let md5 = md5.to_lowercase();
+                            let entry = pool.entry(md5.clone()).or_insert_with(|| SearchEntry {
+                                md5: md5.clone(),
+                                title: String::new(),
+                                subtitle: String::new(),
+                                artist: String::new(),
+                                path: String::new(),
+                                levels: vec![],
+                                analyzed: false,
+                            });
+                            // Song database metadata is preferred
+                            entry.title = title;
+                            entry.subtitle = subtitle;
+                            entry.artist = artist;
+                            if entry.path.is_empty() {
+                                entry.path = path;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut result: Vec<SearchEntry> = pool.into_values().collect();
+    result.sort_by(|a, b| a.title.cmp(&b.title));
+    Ok(result)
 }
 
 #[cfg(test)]

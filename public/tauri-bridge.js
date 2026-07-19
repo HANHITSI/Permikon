@@ -25,7 +25,7 @@ const tauriAPI = {
 
     analyzeChart: async (path) => tauriAPI.invoke('analyze_chart', { path }),
     loadChart: async (md5) => tauriAPI.invoke('load_chart', { md5 }),
-    toggleFavorite: async (md5) => tauriAPI.invoke('toggle_favorite', { md5 }),
+
     deleteHistory: async (md5) => tauriAPI.invoke('delete_history', { md5 }),
     clearHistory: async () => tauriAPI.invoke('clear_history', {}),
     openFileDialog: async () => tauriAPI.invoke('open_file_dialog', {}),
@@ -42,6 +42,13 @@ const tauriAPI = {
     removeSongDatabase: async (dbPath) => tauriAPI.invoke('remove_song_database', { dbPath }),
     getSongDatabases: async () => tauriAPI.invoke('get_song_databases', {}),
     search: async (query) => tauriAPI.invoke('search', { query }),
+    getSearchPool: async () => tauriAPI.invoke('get_search_pool', {}),
+    // Difficulty tables
+    getCustomTables: async () => tauriAPI.invoke('get_custom_tables', {}),
+    saveCustomTables: async (tables) => tauriAPI.invoke('save_custom_tables', { tables }),
+    rebuildRegistry: async () => tauriAPI.invoke('rebuild_registry', {}),
+    getTableEntries: async () => tauriAPI.invoke('get_table_entries', {}),
+    readClipboard: async () => { try { const { readText } = window.__TAURI__.clipboardManager; return await readText(); } catch(e) { try { return await navigator.clipboard.readText(); } catch(e2) { return ''; } } },
 };
 
 window.tauriAPI = tauriAPI;

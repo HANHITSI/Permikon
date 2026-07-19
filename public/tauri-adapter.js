@@ -11,26 +11,20 @@
 
         app.loadRegistry = async function() {
             try {
-                var result = await window.tauriAPI.getRecentAnalyses(50);
-                if (result && result.entries) {
+                var pool = await window.tauriAPI.getSearchPool();
+                if (pool) {
+                    this.searchPool = pool;
                     this.registry = {};
-                    result.entries.forEach(function(entry) {
-                        this.registry[entry.md5] = {
-                            md5: entry.md5,
-                            title: entry.title,
-                            subtitle: entry.subtitle,
-                            artist: entry.artist,
-                            levels: entry.difficulty ? [entry.difficulty] : [],
-                            _analyzedAt: entry.analyzed_at,
-                            _favorite: entry.favorite,
-                            path: entry.path
-                        };
-                    }.bind(this));
+                    for (var i = 0; i < pool.length; i++) {
+                        this.registry[pool[i].md5] = pool[i];
+                    }
                     this.registryList = Object.values(this.registry);
                     this.searchResultsData = this.registryList;
+                    this.animateCounter(this.registryList.filter(function(e) { return e.analyzed; }).length);
                 }
             } catch (error) {
-                console.error('Failed to load history:', error);
+                console.error('Failed to load search pool:', error);
+                this.searchPool = [];
                 this.registry = {};
                 this.registryList = [];
                 this.searchResultsData = [];
@@ -68,26 +62,12 @@
         };
 
         app.selectChart = function(md5, entry) {
-            // Ensure the entry is in the registry so updateChartHeader can find it.
-            // This matters for song database entries that haven't been analyzed yet.
-            if (entry && !this.registry[md5]) {
-                this.registry[md5] = {
-                    md5: entry.md5,
-                    title: entry.title,
-                    subtitle: entry.subtitle || '',
-                    artist: entry.artist || '',
-                    levels: entry.difficulty ? [entry.difficulty] : [],
-                    _analyzedAt: entry._analyzedAt,
-                    _favorite: false,
-                    path: entry.path
-                };
-            }
             this.updateChartHeader(md5);
             this.hideSearchResults();
             this.dom.chartSearch.value = '';
             this.dom.chartSearch.blur();
 
-            if (entry && entry.path && (!entry._analyzedAt || entry._analyzedAt === 0)) {
+            if (entry && entry.path && !entry.analyzed) {
                 this.loadFromSongDb(entry);
             } else {
                 this.loadChart(md5);
@@ -112,40 +92,32 @@
             }
         };
 
-        app.filterAndShow = async function() {
-            var q = this.dom.chartSearch.value.trim();
+        app.filterAndShow = function(query) {
+            var q = (query || '').trim();
+            var pool = this.searchPool || [];
+
+            if (this.searchOnlyTables) {
+                pool = pool.filter(function(e) { return e.levels && e.levels.length > 0; });
+            }
+
             if (!q) {
-                this.hideSearchResults();
+                this.renderSearchResults(pool);
                 return;
             }
-            await this.searchUnified(q);
+
+            var tokens = q.toLowerCase().split(/\s+/);
+            var results = pool.filter(function(entry) {
+                var title = (entry.title || '').toLowerCase();
+                var subtitle = (entry.subtitle || '').toLowerCase();
+                var artist = (entry.artist || '').toLowerCase();
+                return tokens.every(function(token) {
+                    return title.includes(token) || subtitle.includes(token) || artist.includes(token);
+                });
+            });
+            this.renderSearchResults(results);
         };
 
-        app.searchUnified = async function(query) {
-            try {
-                var result = await window.tauriAPI.search(query);
-                if (result && result.entries) {
-                    this.searchResultsData = result.entries.map(function(entry) {
-                        return {
-                            md5: entry.md5,
-                            title: entry.title,
-                            subtitle: entry.subtitle,
-                            artist: entry.artist,
-                            levels: entry.difficulty ? [entry.difficulty] : [],
-                            _analyzedAt: entry.analyzed_at,
-                            _favorite: entry.favorite,
-                            path: entry.path
-                        };
-                    });
-                    this.renderSearchResults(this.searchResultsData);
-                }
-            } catch (error) {
-                console.error('Search failed:', error);
-                this.showToast('Search failed: ' + error.message, 5000);
-                this.searchResultsData = [];
-                this.renderSearchResults([]);
-            }
-        };
+        // searchUnified is no longer needed; filtering is client-side.
 
         // save() persists to both localStorage (instant) and Tauri (persistent).
         app.save = function() {
@@ -165,7 +137,8 @@
                 sortColumn: this.sortCol,
                 sortAscending: this.sortAsc,
                 md5: this.currentMd5,
-                scrollTop: this.dom.result.querySelector('.table-wrap')?.scrollTop || 0
+                scrollTop: this.dom.result.querySelector('.table-wrap')?.scrollTop || 0,
+                searchOnlyTables: this.searchOnlyTables
             };
             localStorage.setItem('permidex_settings', JSON.stringify(state));
             if (window.tauriAPI) {
@@ -195,8 +168,8 @@
             }
         }, 2000);
 
-        // Overrides script.js: the original looks up this.registry[md5],
-        // which misses entries from external databases not yet analyzed.
+        // Overrides script.js: spec-compliant card layout.
+        // Top: title + subtitle, Middle: levels, Bottom: artist, Bottom-right: ✓
         app.renderSearchResults = function(results) {
             var shown = (results || []).slice(0, 96);
             this.searchResultsData = shown;
@@ -207,16 +180,24 @@
             } else {
                 var html = '';
                 shown.forEach(function(entry, idx) {
-                    var subtitleOrLevels = '';
-                    if (entry.subtitle) {
-                        subtitleOrLevels = entry.subtitle;
-                    } else if (entry.levels && entry.levels.length) {
-                        subtitleOrLevels = '(' + entry.levels.join(', ') + ')';
-                    }
-                    html += '<div class="search-card" data-index="' + idx + '" data-md5="' + entry.md5 + '">';
-                    html += '<div class="search-card-title">' + entry.title + '</div>';
-                    html += '<div class="search-card-levels">' + subtitleOrLevels + '</div>';
-                    html += '<div class="search-card-artist">' + (entry.artist || '') + '</div>';
+                    // Top: title + subtitle (space-separated)
+                    var titleLine = entry.title || '';
+                    if (entry.subtitle) titleLine += ' ' + entry.subtitle;
+
+                    // Middle: difficulty levels from registry.json (comma-separated)
+                    var levelStr = (entry.levels && entry.levels.length) ? entry.levels.join(', ') : '';
+
+                    // Bottom: artist
+                    var artist = entry.artist || '';
+
+                    // Bottom-right: ✓ only if chart exists in history.db
+                    var checkmark = entry.analyzed ? '<span class="search-card-check">✓</span>' : '';
+
+                    html += '<div class="search-card" data-index="' + idx + '">';
+                    html += '<div class="search-card-title">' + titleLine + '</div>';
+                    html += '<div class="search-card-levels">' + levelStr + '</div>';
+                    html += '<div class="search-card-artist">' + artist + '</div>';
+                    html += checkmark;
                     html += '</div>';
                 });
                 this.dom.searchResults.innerHTML = html;
@@ -312,8 +293,8 @@
                         subtitle: results[0].subtitle,
                         artist: results[0].artist,
                         levels: results[0].difficulty ? [results[0].difficulty] : [],
-                        _analyzedAt: results[0].analyzed_at,
-                        _favorite: false
+                        analyzed: true,
+                        path: results[0].path
                     };
 
                     this.updateChartHeader(results[0].md5);
