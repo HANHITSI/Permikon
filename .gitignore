@@ -18,6 +18,9 @@ Thumbs.db
 # Environment
 .env
 
+# Misc
+src-tauri/cargo_err.txt
+
 # Reference files
 permidex_reference/
 specs/
