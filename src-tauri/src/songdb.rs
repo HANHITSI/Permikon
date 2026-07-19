@@ -4,8 +4,7 @@ use std::path::Path;
 
 use crate::error::{PermikonError, Result};
 
-/// Cached column mapping for a compatible table in an external song database.
-/// Discovered once when the DB is loaded, then reused for every search.
+/// Column mapping for a compatible table, cached after initial discovery.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableMapping {
     pub table_name: String,
@@ -17,7 +16,6 @@ pub struct TableMapping {
     pub col_mode: Option<String>,
 }
 
-/// A single result row from an external song database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SongDbEntry {
     pub md5: String,
@@ -34,8 +32,7 @@ fn find_column(available: &[String], target: &str) -> Option<String> {
     available.iter().find(|c| c.to_lowercase() == lower).cloned()
 }
 
-/// Inspect all tables in a SQLite database and return compatible mappings.
-/// This is called once when a database is loaded, not on every search.
+/// Inspect all tables and return compatible column mappings.
 pub fn discover_schema(db_path: &Path) -> Result<Vec<TableMapping>> {
     let conn = Connection::open(db_path)?;
 
@@ -106,14 +103,12 @@ pub fn discover_schema(db_path: &Path) -> Result<Vec<TableMapping>> {
     Ok(mappings)
 }
 
-/// Validate that a database file opens as SQLite and contains at least one compatible table.
-/// Returns the discovered mappings if valid.
+/// Validate a SQLite database and return compatible table mappings.
 pub fn validate_database(db_path: &Path) -> Result<Vec<TableMapping>> {
     if !db_path.exists() {
         return Err(PermikonError::NotFound(db_path.display().to_string()));
     }
 
-    // Quick SQLite check
     let conn = Connection::open(db_path)?;
 
     let is_valid: bool = conn
@@ -140,8 +135,7 @@ pub fn validate_database(db_path: &Path) -> Result<Vec<TableMapping>> {
     Ok(mappings)
 }
 
-/// Search using pre-cached table mappings (called on every search, fast path).
-/// Each mapping already knows the table name and column names.
+/// Search using pre-cached table mappings.
 pub fn search_with_mappings(
     db_path: &Path,
     mappings: &[TableMapping],
@@ -218,7 +212,7 @@ pub fn search_with_mappings(
     Ok(all_entries)
 }
 
-/// Get total row count across all compatible tables (for display purposes).
+/// Get total row count across all compatible tables.
 pub fn count_entries(db_path: &Path, mappings: &[TableMapping]) -> usize {
     let conn = match Connection::open(db_path) {
         Ok(c) => c,

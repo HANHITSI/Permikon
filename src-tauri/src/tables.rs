@@ -22,7 +22,7 @@ pub struct TableEntry {
     pub levels: Vec<String>,
 }
 
-/// Returns the curated set of default difficulty tables.
+/// Returns the default difficulty tables.
 pub fn get_default_tables() -> Vec<CustomTableConfig> {
     vec![
         CustomTableConfig {
@@ -30,14 +30,14 @@ pub fn get_default_tables() -> Vec<CustomTableConfig> {
             url: "https://stellabms.xyz/sl/score.json".into(),
             prefix: "sl".into(),
             enabled: true,
-            strip_prefix: "★".into(),
+            strip_prefix: "".into(),
         },
         CustomTableConfig {
             name: "Stella".into(),
             url: "https://stellabms.xyz/st/score.json".into(),
             prefix: "st".into(),
             enabled: true,
-            strip_prefix: "★".into(),
+            strip_prefix: "".into(),
         },
         CustomTableConfig {
             name: "Insane".into(),
@@ -54,38 +54,31 @@ pub fn get_default_tables() -> Vec<CustomTableConfig> {
             strip_prefix: "乱打, 重発狂, sub乱打, sub重発狂, 査定中, 保留".into(),
         },
         CustomTableConfig {
-            name: "NG Insane".into(),
+            name: "NewGen Insane".into(),
             url: "https://rattoto10.github.io/second_table/insane_data.json".into(),
             prefix: "ngin".into(),
             enabled: true,
-            strip_prefix: "★".into(),
+            strip_prefix: "".into(),
         },
         CustomTableConfig {
-            name: "NG Overjoy".into(),
+            name: "NewGen Overjoy".into(),
             url: "https://rattoto10.github.io/second_table/overjoy_score.json".into(),
             prefix: "ngoj".into(),
             enabled: true,
             strip_prefix: "".into(),
         },
+
         CustomTableConfig {
-            name: "Overjoy".into(),
-            url: "https://lr2.sakura.ne.jp/data/score.json".into(),
-            prefix: "oj".into(),
-            enabled: true,
-            strip_prefix: "".into(),
-        },
-        CustomTableConfig {
-            name: "UDE".into(),
+            name: "Ude Oshi".into(),
             url: "https://script.googleusercontent.com/macros/echo?user_content_key=AUkAhnTwRmhAFXyft2I8XoWEolIC9AhvJtrsTOMHd7DwPY8oh356xFcwanf3MrFjv7bWBmG6rLI3RPG-x8A07NX-kwcXLMaEHJSApkZ1bfR3I5AnkjUTdEQvB0axnj98Re4c9eUsjLcnqV9X_KnyKlQz2dlcy8wykKo-K3LW_sHPF_W5bjiAd1VaxBX13YsR-Zmx3FLJh5UH81PpVo_22QMYAPm9yjru_FhFVxtR7cQ0ybV7PIuDz25Cj3iv28EeyZMZaElszmyS8qADdWv5QohuuzNwmwBdsA&lib=MqZaTueNTaM_gNijgAs79ggcsk8TLdWHb".into(),
-            prefix: "".into(),
+            prefix: "ude, subude".into(),
             enabled: true,
-            strip_prefix: "".into(),
+            strip_prefix: "Ude, subUde".into(),
         },
     ]
 }
 
-/// Load custom table configurations from disk.
-/// On first launch, writes the default tables to the config file.
+/// Load table configurations. Writes defaults on first launch.
 pub fn load_custom_tables() -> Result<Vec<CustomTableConfig>, crate::error::PermikonError> {
     let path = get_custom_tables_path()?;
 
@@ -102,7 +95,6 @@ pub fn load_custom_tables() -> Result<Vec<CustomTableConfig>, crate::error::Perm
     Ok(defaults)
 }
 
-/// Save custom table configurations to disk.
 pub fn save_custom_tables(tables: &[CustomTableConfig]) -> Result<(), crate::error::PermikonError> {
     let path = get_custom_tables_path()?;
     let content = serde_json::to_string_pretty(tables)?;
@@ -110,11 +102,7 @@ pub fn save_custom_tables(tables: &[CustomTableConfig]) -> Result<(), crate::err
     Ok(())
 }
 
-/// Process a raw level string according to the table's strip/prefix config.
-///
-/// 1. If strip_prefix is configured and matches the beginning, remove it.
-/// 2. Normalize whitespace.
-/// 3. Prepend the configured prefix.
+/// Strip matching prefix, prepend table prefix.
 pub fn process_level(raw: &str, config: &CustomTableConfig) -> Option<String> {
     let mut level = raw.to_string();
 

@@ -1,7 +1,6 @@
 const tauriAPI = {
     isTauri: () => typeof window.__TAURI__ !== 'undefined',
 
-    // Invoke a Tauri command with improved error extraction
     invoke: async (command, args = {}) => {
         if (!tauriAPI.isTauri()) {
             console.warn(`Tauri not available, cannot call ${command}`);
@@ -11,7 +10,6 @@ const tauriAPI = {
             const { invoke } = window.__TAURI__.core;
             return await invoke(command, args);
         } catch (error) {
-            // Tauri 2 wraps command errors. Extract the human-readable message.
             let message = error.message || String(error);
             if (error.data && typeof error.data === 'string') {
                 message = error.data;
@@ -25,7 +23,6 @@ const tauriAPI = {
 
     analyzeChart: async (path) => tauriAPI.invoke('analyze_chart', { path }),
     loadChart: async (md5) => tauriAPI.invoke('load_chart', { md5 }),
-
     deleteHistory: async (md5) => tauriAPI.invoke('delete_history', { md5 }),
     clearHistory: async () => tauriAPI.invoke('clear_history', {}),
     openFileDialog: async () => tauriAPI.invoke('open_file_dialog', {}),
@@ -37,18 +34,23 @@ const tauriAPI = {
     getRecentAnalyses: async (limit = 20) => tauriAPI.invoke('get_recent_analyses', { limit }),
     saveAnalysis: async (result) => tauriAPI.invoke('save_analysis', { result }),
     dragDropAnalyze: async (paths) => tauriAPI.invoke('drag_drop_analyze', { paths }),
-    // Song database commands
     loadSongDatabase: async (dbPath) => tauriAPI.invoke('load_song_database', { dbPath }),
     removeSongDatabase: async (dbPath) => tauriAPI.invoke('remove_song_database', { dbPath }),
     getSongDatabases: async () => tauriAPI.invoke('get_song_databases', {}),
     search: async (query) => tauriAPI.invoke('search', { query }),
     getSearchPool: async () => tauriAPI.invoke('get_search_pool', {}),
-    // Difficulty tables
     getCustomTables: async () => tauriAPI.invoke('get_custom_tables', {}),
     saveCustomTables: async (tables) => tauriAPI.invoke('save_custom_tables', { tables }),
     rebuildRegistry: async () => tauriAPI.invoke('rebuild_registry', {}),
     getTableEntries: async () => tauriAPI.invoke('get_table_entries', {}),
-    readClipboard: async () => { try { const { readText } = window.__TAURI__.clipboardManager; return await readText(); } catch(e) { try { return await navigator.clipboard.readText(); } catch(e2) { return ''; } } },
+    readClipboard: async () => {
+        try {
+            const { readText } = window.__TAURI__.clipboardManager;
+            return await readText();
+        } catch (e) {
+            try { return await navigator.clipboard.readText(); } catch (e2) { return ''; }
+        }
+    },
 };
 
 window.tauriAPI = tauriAPI;

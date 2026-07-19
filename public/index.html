@@ -20,7 +20,7 @@
             </div>
             <div class="subtitle">
                 powered by
-                <span class="panchira-text" title="density-wave aware rust implementation of&#10;github.com/HANHITSI/pantsu">panchira</span>
+                <span class="panchira-text">panchira</span>
             </div>
             <div id="permCounter" class="perm-counter">0 permutations and counting...</div>
         </div>
@@ -197,11 +197,12 @@
     <div id="toastContainer"></div>
     </div>
 
-    <script src="tauri-bridge.js"></script>
-    <script src="tauri-adapter.js"></script>
+    <script src="tauri-api.js"></script>
+    <script src="search.js"></script>
+    <script src="ranker.js"></script>
+    <script src="ui.js"></script>
     <script>
-    // Block DevTools shortcuts in production builds only.
-    // Tauri dev serves from http://localhost; production from tauri://localhost.
+    // DevTools lockdown for production builds (Tauri dev uses http:, production uses tauri:).
     if (window.location.protocol !== 'http:') {
         document.addEventListener('keydown', function(e) {
             if (e.key === 'F12') {
@@ -227,11 +228,9 @@
         }, true);
     }
     </script>
-    <script src="script.js"></script>
+    <script src="app.js"></script>
     <script>
-    // Listen for native file-dropped events from the Tauri backend.
-    // With dragDropEnabled=true in tauri.conf.json, Tauri intercepts
-    // file drops at the native level. Rust emits this event with paths.
+    // Native file drops intercepted by Tauri backend.
     if (window.__TAURI__) {
         var listen = window.__TAURI__.event.listen;
         listen('file-dropped', function (event) {

@@ -43,8 +43,7 @@ pub struct SearchResult {
     pub total: usize,
 }
 
-/// A single merged entry in the search pool.
-/// One per MD5. Built by merging registry.json, history.db, and song databases.
+/// A merged search entry: one per MD5.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SearchEntry {
     pub md5: String,
@@ -381,7 +380,7 @@ pub async fn drag_drop_analyze(app: AppHandle, paths: Vec<String>) -> Result<Vec
     Ok(results)
 }
 
-/// Configuration for a loaded song database, stored in settings.json.
+/// A loaded song database configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SongDbConfig {
     pub path: String,
@@ -389,8 +388,7 @@ pub struct SongDbConfig {
     pub entry_count: usize,
 }
 
-/// Load (register) a song database.
-/// Validates it, discovers compatible tables, caches the schema, saves to settings.
+/// Load a song database: validate, discover tables, save to settings.
 #[command]
 pub async fn load_song_database(_app: AppHandle, db_path: String) -> Result<SongDbConfig> {
     let path = std::path::PathBuf::from(&db_path);
@@ -543,8 +541,7 @@ pub async fn get_song_databases(_app: AppHandle) -> Result<Vec<SongDbConfig>> {
     Ok(configs)
 }
 
-/// Unified search: queries history.db + all configured song databases.
-/// Returns a single merged result list. The frontend never knows the source.
+/// Query history.db and song databases, return merged results.
 #[command]
 pub async fn search(app: AppHandle, query: String) -> Result<SearchResult> {
     let mut entries = Vec::new();
@@ -616,8 +613,7 @@ pub async fn save_custom_tables(tables: Vec<CustomTableConfig>) -> Result<()> {
     Ok(crate::tables::save_custom_tables(&tables)?)
 }
 
-/// Rebuild registry.json from enabled configured tables.
-/// Downloads every enabled table, processes levels, merges, writes registry.json.
+/// Download enabled tables, merge levels, write registry.json.
 #[command]
 pub async fn rebuild_registry(app: AppHandle) -> Result<Vec<String>> {
     let configs = crate::tables::load_custom_tables()?;
@@ -703,10 +699,7 @@ pub async fn get_table_entries() -> Result<Vec<TableEntry>> {
     Ok(map.into_values().collect())
 }
 
-/// Build a merged search pool: one entry per MD5.
-/// Registry.json contributes levels.
-/// History.db contributes analyzed state + fills missing metadata.
-/// Song databases provide preferred metadata.
+/// Build merged search pool: registry (levels) + history (analyzed) + song DBs (metadata).
 #[command]
 pub async fn get_search_pool(app: AppHandle) -> Result<Vec<SearchEntry>> {
     use std::collections::HashMap;
