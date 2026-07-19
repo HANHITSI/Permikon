@@ -1,3 +1,0 @@
-    Checking permikon v0.1.1 (/home/eetu/permdex/permikon/src-tauri)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.95s
-EXIT:0
